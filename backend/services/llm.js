@@ -1,4 +1,45 @@
-import fetch from 'node-fetch';
+import fetch, { AbortError } from 'node-fetch';
+
+// Helper: fetch with timeout
+async function fetchWithTimeout(url, options, timeoutMs = 60000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    return response;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// Helper: retry fetch
+async function fetchWithRetry(url, options, { maxRetries = 2, timeoutMs = 60000 } = {}) {
+  let lastError;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 0) {
+        console.log(`[Fetch] Retry attempt ${attempt}/${maxRetries}`);
+        await new Promise(r => setTimeout(r, 1000 * attempt)); // exponential backoff
+      }
+      return await fetchWithTimeout(url, options, timeoutMs);
+    } catch (error) {
+      lastError = error;
+      console.error(`[Fetch] Attempt ${attempt} failed:`, error.message);
+
+      // Don't retry on abort/timeout
+      if (error.name === 'AbortError') {
+        throw new Error(`Request timed out after ${timeoutMs}ms`);
+      }
+    }
+  }
+
+  throw lastError;
+}
 
 // LLM Provider configurations
 const PROVIDERS = {
@@ -204,14 +245,14 @@ async function callOpenAI({ messages, model, enableWebSearch = true }) {
 
   console.log(`[OpenAI] Calling Responses API with model ${model}, web_search: ${enableWebSearch}`);
 
-  const response = await fetch('https://api.openai.com/v1/responses', {
+  const response = await fetchWithRetry('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`
     },
     body: JSON.stringify(body)
-  });
+  }, { maxRetries: 2, timeoutMs: 90000 });
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -257,16 +298,6 @@ async function callGemini({ messages, model, enableWebSearch = true }) {
   // Build contents from messages
   const contents = [];
 
-  // Add system instruction
-  contents.push({
-    role: 'user',
-    parts: [{ text: SYSTEM_PROMPT }]
-  });
-  contents.push({
-    role: 'model',
-    parts: [{ text: 'Understood. I will always create interactive React applications and never respond with plain text.' }]
-  });
-
   // Add conversation messages
   for (const msg of messages) {
     contents.push({
@@ -277,13 +308,18 @@ async function callGemini({ messages, model, enableWebSearch = true }) {
 
   const body = {
     contents,
+    // Gemini 3 uses system_instruction separately
+    system_instruction: {
+      parts: [{ text: SYSTEM_PROMPT }]
+    },
     generationConfig: {
-      temperature: 0.7,
+      // Gemini 3 recommends keeping temperature at 1.0
+      temperature: 1.0,
       maxOutputTokens: 8192
     }
   };
 
-  // Add google_search tool
+  // Add google_search tool for grounding
   if (enableWebSearch) {
     body.tools = [{
       google_search: {}
@@ -293,18 +329,25 @@ async function callGemini({ messages, model, enableWebSearch = true }) {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   console.log(`[Gemini] Calling native API with model ${model}, google_search: ${enableWebSearch}`);
+  console.log(`[Gemini] Request body:`, JSON.stringify(body, null, 2).slice(0, 500));
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(body)
-  });
+  let response;
+  try {
+    response = await fetchWithRetry(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    }, { maxRetries: 2, timeoutMs: 90000 });
+  } catch (fetchError) {
+    console.error('[Gemini] Fetch error:', fetchError.message);
+    throw new Error(`Gemini connection failed: ${fetchError.message}`);
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('[Gemini] API Error:', errorText);
+    console.error('[Gemini] API Error:', response.status, errorText);
     throw new Error(`Gemini API error (${response.status}): ${errorText}`);
   }
 
