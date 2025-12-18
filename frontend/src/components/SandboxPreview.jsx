@@ -124,17 +124,33 @@ export default function SandboxPreview() {
 function ErrorHandler({ onError, onRepair }) {
   const { sandpack } = useSandpack();
   const [error, setError] = useState(null);
+  const [lastErrorMessage, setLastErrorMessage] = useState(null);
+
+  // Store callbacks in refs to avoid dependency issues
+  const onErrorRef = React.useRef(onError);
+  const onRepairRef = React.useRef(onRepair);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+    onRepairRef.current = onRepair;
+  });
 
   useEffect(() => {
     // Listen for errors from sandpack
     const errorInfo = sandpack.error;
-    if (errorInfo) {
-      setError(errorInfo);
-      onError?.(errorInfo);
-    } else {
-      setError(null);
+    const errorMessage = errorInfo?.message || null;
+
+    // Only update if error message actually changed
+    if (errorMessage !== lastErrorMessage) {
+      setLastErrorMessage(errorMessage);
+      if (errorInfo) {
+        setError(errorInfo);
+        onErrorRef.current?.(errorInfo);
+      } else {
+        setError(null);
+      }
     }
-  }, [sandpack.error, onError]);
+  }, [sandpack.error, lastErrorMessage]);
 
   if (!error) return null;
 
@@ -144,7 +160,7 @@ function ErrorHandler({ onError, onRepair }) {
       <span className="error-message">{error.message}</span>
       <button
         className="btn btn-repair"
-        onClick={() => onRepair?.(error.message)}
+        onClick={() => onRepairRef.current?.(error.message)}
       >
         Auto-fix
       </button>

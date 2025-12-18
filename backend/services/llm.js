@@ -3,112 +3,132 @@ import fetch from 'node-fetch';
 // LLM Provider configurations
 const PROVIDERS = {
   openai: {
-    baseUrl: 'https://api.openai.com/v1',
     models: ['gpt-5-mini', 'gpt-5.2'],
-    getHeaders: () => ({
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-    }),
-    // GPT-5 models are reasoning models - different API params
-    isReasoningModel: true
+    supportsWebSearch: true
   },
   gemini: {
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     models: ['gemini-3-flash-preview', 'gemini-3-pro-preview'],
-    getHeaders: () => ({
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.GEMINI_API_KEY}`
-    }),
-    isReasoningModel: false
+    supportsWebSearch: true
   }
 };
 
-// System prompt for code generation
-const SYSTEM_PROMPT = `You are an AI assistant that creates interactive React applications that run in a browser sandbox.
+// System prompt - ALWAYS generate interactive apps
+const SYSTEM_PROMPT = `You are GenUI - an AI that ALWAYS creates interactive React applications. You are NOT a chatbot.
 
-CRITICAL OUTPUT FORMAT:
-You MUST respond with ONLY valid JSON. No markdown, no code blocks, no explanations outside JSON.
+CRITICAL: You MUST ALWAYS respond with a React application, NEVER plain text.
+Even for questions, news, weather, etc. - CREATE AN APP that displays the information visually.
 
-For generating apps, output this EXACT format:
-{"type":"sandbox","code":{"App.js":"YOUR_REACT_CODE_HERE","styles.css":"YOUR_CSS_HERE"}}
-
-For text responses only:
-{"type":"message","content":"Your message here"}
-
-EXAMPLE - Calculator App:
-{"type":"sandbox","code":{"App.js":"import React, { useState } from 'react';\\nimport './styles.css';\\n\\nexport default function App() {\\n  const [display, setDisplay] = useState('0');\\n  const [equation, setEquation] = useState('');\\n\\n  const handleNumber = (num) => {\\n    if (display === '0') setDisplay(num);\\n    else setDisplay(display + num);\\n  };\\n\\n  const handleOperator = (op) => {\\n    setEquation(display + ' ' + op + ' ');\\n    setDisplay('0');\\n  };\\n\\n  const calculate = () => {\\n    try {\\n      const result = eval(equation + display);\\n      setDisplay(String(result));\\n      setEquation('');\\n    } catch { setDisplay('Error'); }\\n  };\\n\\n  const clear = () => { setDisplay('0'); setEquation(''); };\\n\\n  return (\\n    <div className=\\"calculator\\">\\n      <div className=\\"display\\">{equation}{display}</div>\\n      <div className=\\"buttons\\">\\n        {['7','8','9','/','4','5','6','*','1','2','3','-','0','C','=','+'].map(btn => (\\n          <button key={btn} onClick={() => {\\n            if (btn === 'C') clear();\\n            else if (btn === '=') calculate();\\n            else if (['+','-','*','/'].includes(btn)) handleOperator(btn);\\n            else handleNumber(btn);\\n          }} className={['+','-','*','/','='].includes(btn) ? 'operator' : ''}>{btn}</button>\\n        ))}\\n      </div>\\n    </div>\\n  );\\n}","styles.css":".calculator { max-width: 300px; margin: 20px auto; padding: 20px; background: #1a1a2e; border-radius: 16px; }\\n.display { background: #16213e; color: #fff; padding: 20px; font-size: 28px; text-align: right; border-radius: 8px; margin-bottom: 16px; min-height: 60px; word-break: break-all; }\\n.buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }\\nbutton { padding: 20px; font-size: 20px; border: none; border-radius: 8px; cursor: pointer; background: #0f3460; color: white; transition: 0.2s; }\\nbutton:hover { background: #1a4d7c; }\\nbutton.operator { background: #e94560; }\\nbutton.operator:hover { background: #ff6b6b; }"}}
-
-LIBRARIES AVAILABLE:
-- react, react-dom (always)
-- react-leaflet, leaflet (maps - import 'leaflet/dist/leaflet.css')
-- chart.js, react-chartjs-2, recharts (charts)
-- date-fns (dates)
+OUTPUT FORMAT (MANDATORY):
+\`\`\`json
+{"type":"sandbox","code":{"App.js":"YOUR_REACT_CODE","styles.css":"YOUR_CSS"},"sources":[{"title":"...","url":"...","image":"..."}]}
+\`\`\`
 
 RULES:
-1. ALWAYS output valid JSON only - NO markdown code blocks
-2. Use double backslash for newlines in JSON strings: \\n
-3. Escape quotes properly in JSON: \\"
-4. For iPhone-style calculator: use grid layout with large touch-friendly buttons
-5. For maps: always set explicit container height (400px)
-6. For charts: register Chart.js components
+1. ALWAYS create an interactive React app - NEVER just text
+2. For news/information: Create a beautiful card-based UI displaying the content
+3. Use web search results to get REAL data including REAL image URLs
+4. If web search provides image URLs, USE THEM in your app
+5. If no real images available, use https://picsum.photos/seed/KEYWORD/WIDTH/HEIGHT
+6. App must fill container: min-height: 100vh; width: 100%;
+7. Use dark theme: backgrounds #1a1a2e, #0f0f23, #16213e
+8. Make cards with glassmorphism effect
 
-DO NOT include any text outside the JSON object.`;
+ALLOWED LIBRARIES (ONLY USE THESE):
+- react, react-dom (built-in)
+- recharts (for charts: LineChart, BarChart, AreaChart, PieChart, etc.)
+- date-fns (for date formatting)
+- react-leaflet, leaflet (for maps)
+- chart.js, react-chartjs-2 (alternative charts)
 
-// Parse LLM response to extract structured content
+DO NOT USE: lucide-react, @heroicons, framer-motion, tailwindcss, or any other libraries not listed above.
+
+STYLING (inline styles or styles.css):
+- Root: min-height: 100vh; width: 100%; padding: 20px; background: linear-gradient(135deg, #0f0f23, #1a1a2e);
+- Cards: background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);
+- Images: width: 100%; border-radius: 12px; object-fit: cover;
+- Icons: Use SVG inline or emoji, NOT icon libraries.
+
+IMPORTANT: Include "sources" array in your response with title, url, and image for each source used.
+
+JSON ESCAPING (CRITICAL):
+- Wrap your JSON response in \`\`\`json code blocks
+- Newlines in code: Use \\n
+- Quotes in code: Use \\"
+- Backslash in code: Use \\\\`;
+
+// Parse LLM response
 function parseResponse(content) {
   if (!content || typeof content !== 'string') {
     return [{ type: 'message', content: content || '' }];
   }
 
   let cleaned = content.trim();
+
+  // Remove markdown code blocks (handle multiple variations)
   cleaned = cleaned.replace(/^```json\s*/i, '').replace(/\s*```$/i, '');
   cleaned = cleaned.replace(/^```\s*/i, '').replace(/\s*```$/i, '');
 
-  const jsonPatterns = [
-    /^\s*(\{[\s\S]*\})\s*$/,
-    /^\s*(\[[\s\S]*\])\s*$/,
-  ];
-
-  for (const pattern of jsonPatterns) {
-    const match = cleaned.match(pattern);
-    if (match) {
-      try {
-        const parsed = JSON.parse(match[1]);
-        if (Array.isArray(parsed)) return parsed;
-        return [parsed];
-      } catch {
-        // Continue
-      }
-    }
+  // Also handle case where ``` is in the middle
+  const jsonMatch = cleaned.match(/```json\s*([\s\S]*?)\s*```/i);
+  if (jsonMatch) {
+    cleaned = jsonMatch[1].trim();
   }
 
-  const jsonObjectMatch = cleaned.match(/\{[\s\S]*"type"\s*:\s*"(sandbox|message|thinking)"[\s\S]*\}/);
-  if (jsonObjectMatch) {
-    try {
-      let depth = 0;
-      let start = cleaned.indexOf('{');
-      let end = start;
+  // Check if it looks like JSON (starts with { or [)
+  const trimmedCleaned = cleaned.trim();
+  const looksLikeJson = trimmedCleaned.startsWith('{') || trimmedCleaned.startsWith('[');
 
-      for (let i = start; i < cleaned.length; i++) {
-        if (cleaned[i] === '{') depth++;
-        else if (cleaned[i] === '}') {
-          depth--;
-          if (depth === 0) {
-            end = i + 1;
-            break;
-          }
+  // Try to parse as JSON first
+  if (looksLikeJson) {
+    try {
+      // Find JSON object boundaries
+      const startIdx = cleaned.indexOf('{');
+      const endIdx = cleaned.lastIndexOf('}');
+      if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+        const jsonStr = cleaned.substring(startIdx, endIdx + 1);
+        const parsed = JSON.parse(jsonStr);
+
+        // Valid sandbox response
+        if (parsed.type === 'sandbox' && parsed.code) {
+          console.log('[Parse] Successfully parsed sandbox JSON');
+          return [parsed];
+        }
+
+        // Other valid JSON with type
+        if (parsed.type) {
+          return [parsed];
+        }
+      }
+    } catch (e) {
+      console.error('[Parse] JSON parse error:', e.message);
+
+      // Try to extract code from malformed JSON
+      const codeMatch = cleaned.match(/"App\.js"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+      const cssMatch = cleaned.match(/"styles\.css"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+
+      if (codeMatch) {
+        console.log('[Parse] Extracted code from malformed JSON');
+        try {
+          // Unescape the code string
+          const appCode = JSON.parse('"' + codeMatch[1] + '"');
+          const cssCode = cssMatch ? JSON.parse('"' + cssMatch[1] + '"') : '';
+          return [{
+            type: 'sandbox',
+            code: { 'App.js': appCode, 'styles.css': cssCode }
+          }];
+        } catch (e2) {
+          console.error('[Parse] Failed to unescape code:', e2.message);
         }
       }
 
-      const jsonStr = cleaned.substring(start, end);
-      const parsed = JSON.parse(jsonStr);
-      return [parsed];
-    } catch {
-      // Fall through
+      // If it looks like JSON but failed to parse, return as message (don't treat as React code)
+      return [{ type: 'message', content: 'Failed to parse app response. Please try again.' }];
     }
   }
 
-  if (cleaned.includes('export default function') || cleaned.includes('function App()')) {
+  // Only check for React code if it doesn't look like JSON
+  if (!looksLikeJson && (cleaned.includes('export default function') || cleaned.includes('function App()'))) {
+    console.log('[Parse] Detected raw React code');
     return [{
       type: 'sandbox',
       code: { 'App.js': cleaned, 'styles.css': '' }
@@ -118,12 +138,209 @@ function parseResponse(content) {
   return [{ type: 'message', content }];
 }
 
-// Call LLM
+// Extract sources and images from OpenAI web search response
+function extractOpenAISources(output) {
+  const sources = [];
+
+  if (!output || !Array.isArray(output)) return sources;
+
+  for (const item of output) {
+    if (item.type === 'message' && item.content) {
+      for (const content of item.content) {
+        if (content.annotations) {
+          for (const annotation of content.annotations) {
+            if (annotation.type === 'url_citation') {
+              sources.push({
+                title: annotation.title || '',
+                url: annotation.url || '',
+                image: null
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return sources;
+}
+
+// Extract sources from Gemini grounding metadata
+function extractGeminiSources(groundingMetadata) {
+  const sources = [];
+
+  if (!groundingMetadata?.groundingChunks) return sources;
+
+  for (const chunk of groundingMetadata.groundingChunks) {
+    if (chunk.web) {
+      sources.push({
+        title: chunk.web.title || '',
+        url: chunk.web.uri || '',
+        image: null
+      });
+    }
+  }
+
+  return sources;
+}
+
+// Call OpenAI with Responses API (supports web search)
+async function callOpenAI({ messages, model, enableWebSearch = true }) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OPENAI_API_KEY not configured');
+
+  // Build input from messages
+  const lastUserMessage = messages.filter(m => m.role === 'user').pop();
+  const conversationContext = messages.map(m => `${m.role}: ${m.content}`).join('\n');
+
+  const input = `${SYSTEM_PROMPT}\n\nConversation:\n${conversationContext}\n\nCreate an interactive React app based on the user's request. If information lookup is needed, search the web first.`;
+
+  const body = {
+    model,
+    input,
+    tools: enableWebSearch ? [{ type: 'web_search' }] : [],
+    tool_choice: enableWebSearch ? 'auto' : undefined
+  };
+
+  console.log(`[OpenAI] Calling Responses API with model ${model}, web_search: ${enableWebSearch}`);
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[OpenAI] API Error:', errorText);
+    throw new Error(`OpenAI API error (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+
+  // Extract text content
+  let content = data.output_text || '';
+
+  // If output is array (multiple items), find the message
+  if (data.output && Array.isArray(data.output)) {
+    for (const item of data.output) {
+      if (item.type === 'message' && item.content) {
+        for (const c of item.content) {
+          if (c.type === 'output_text' || c.text) {
+            content = c.text || c.output_text || content;
+          }
+        }
+      }
+    }
+  }
+
+  const sources = extractOpenAISources(data.output);
+
+  console.log(`[OpenAI] Response received, sources: ${sources.length}`);
+
+  return {
+    content,
+    parsed: parseResponse(content),
+    sources,
+    usage: data.usage
+  };
+}
+
+// Call Gemini with native API (supports google_search)
+async function callGemini({ messages, model, enableWebSearch = true }) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY not configured');
+
+  // Build contents from messages
+  const contents = [];
+
+  // Add system instruction
+  contents.push({
+    role: 'user',
+    parts: [{ text: SYSTEM_PROMPT }]
+  });
+  contents.push({
+    role: 'model',
+    parts: [{ text: 'Understood. I will always create interactive React applications and never respond with plain text.' }]
+  });
+
+  // Add conversation messages
+  for (const msg of messages) {
+    contents.push({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: msg.content }]
+    });
+  }
+
+  const body = {
+    contents,
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 8192
+    }
+  };
+
+  // Add google_search tool
+  if (enableWebSearch) {
+    body.tools = [{
+      google_search: {}
+    }];
+  }
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  console.log(`[Gemini] Calling native API with model ${model}, google_search: ${enableWebSearch}`);
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[Gemini] API Error:', errorText);
+    throw new Error(`Gemini API error (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+
+  // Extract content
+  let content = '';
+  const candidate = data.candidates?.[0];
+
+  if (candidate?.content?.parts) {
+    for (const part of candidate.content.parts) {
+      if (part.text) {
+        content += part.text;
+      }
+    }
+  }
+
+  const sources = extractGeminiSources(candidate?.groundingMetadata);
+
+  console.log(`[Gemini] Response received, sources: ${sources.length}`);
+
+  return {
+    content,
+    parsed: parseResponse(content),
+    sources,
+    groundingMetadata: candidate?.groundingMetadata,
+    usage: data.usageMetadata
+  };
+}
+
+// Main LLM call function
 export async function callLLM({
   messages,
   provider = process.env.DEFAULT_LLM_PROVIDER || 'openai',
-  model = process.env.DEFAULT_MODEL || 'gpt-5-mini',
-  tools = null,
+  model,
+  enableWebSearch = true,
   stream = false,
   onChunk = null
 }) {
@@ -132,114 +349,23 @@ export async function callLLM({
     throw new Error(`Unknown provider: ${provider}`);
   }
 
-  const apiKey = provider === 'openai' ? process.env.OPENAI_API_KEY : process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error(`API key not configured for ${provider}`);
+  // Default models
+  if (!model) {
+    model = provider === 'openai' ? 'gpt-5-mini' : 'gemini-3-flash-preview';
   }
 
-  const fullMessages = [
-    { role: 'system', content: SYSTEM_PROMPT },
-    ...messages
-  ];
+  console.log(`[LLM] Provider: ${provider}, Model: ${model}, WebSearch: ${enableWebSearch}`);
 
-  // Build request body based on model type
-  const body = {
-    model,
-    messages: fullMessages,
-    stream
-  };
-
-  // GPT-5 reasoning models: NO temperature, top_p, etc.
-  // Use max_completion_tokens instead of max_tokens
-  if (config.isReasoningModel) {
-    body.max_completion_tokens = 16384;
-    // DO NOT set temperature, top_p, etc. for reasoning models
-  } else {
-    // Gemini and other models support these params
-    body.max_tokens = 8192;
-    body.temperature = 0.7;
-  }
-
-  // JSON response format for OpenAI
   if (provider === 'openai') {
-    body.response_format = { type: 'json_object' };
+    return callOpenAI({ messages, model, enableWebSearch });
+  } else if (provider === 'gemini') {
+    return callGemini({ messages, model, enableWebSearch });
   }
 
-  if (tools) {
-    body.tools = tools;
-    body.tool_choice = 'auto';
-  }
-
-  console.log(`[LLM] Calling ${provider}/${model}...`);
-
-  const response = await fetch(`${config.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: config.getHeaders(),
-    body: JSON.stringify(body)
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`[LLM] API Error:`, errorText);
-    throw new Error(`LLM API error (${response.status}): ${errorText}`);
-  }
-
-  if (stream && onChunk) {
-    return handleStream(response, onChunk);
-  }
-
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content || '';
-  const toolCalls = data.choices?.[0]?.message?.tool_calls;
-
-  console.log(`[LLM] Response received, length: ${content.length}`);
-
-  return {
-    content,
-    parsed: parseResponse(content),
-    toolCalls,
-    usage: data.usage
-  };
+  throw new Error(`Unsupported provider: ${provider}`);
 }
 
-// Handle streaming response
-async function handleStream(response, onChunk) {
-  const reader = response.body;
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let fullContent = '';
-
-  for await (const chunk of reader) {
-    buffer += decoder.decode(chunk, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const data = line.slice(6);
-        if (data === '[DONE]') {
-          onChunk({ done: true, content: fullContent });
-          return { content: fullContent, parsed: parseResponse(fullContent) };
-        }
-
-        try {
-          const parsed = JSON.parse(data);
-          const delta = parsed.choices?.[0]?.delta?.content;
-          if (delta) {
-            fullContent += delta;
-            onChunk({ done: false, delta, content: fullContent });
-          }
-        } catch {
-          // Ignore
-        }
-      }
-    }
-  }
-
-  return { content: fullContent, parsed: parseResponse(fullContent) };
-}
-
-// Generate code with error repair
+// Generate with retry/repair
 export async function generateWithRepair({
   messages,
   provider,
@@ -267,7 +393,7 @@ export async function generateWithRepair({
       currentMessages.push({ role: 'assistant', content: result.content });
       currentMessages.push({
         role: 'user',
-        content: 'Please generate the interactive React code. Output ONLY valid JSON with type "sandbox".'
+        content: 'You MUST create an interactive React app. Output ONLY valid JSON with type "sandbox" containing App.js and styles.css. Never respond with plain text.'
       });
     }
   }

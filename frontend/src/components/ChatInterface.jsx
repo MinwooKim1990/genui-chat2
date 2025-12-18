@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useChat } from '../context/ChatContext';
 import MessageList from './MessageList';
 import SandboxPreview from './SandboxPreview';
@@ -7,7 +7,10 @@ import ModelSelector from './ModelSelector';
 
 export default function ChatInterface() {
   const [input, setInput] = useState('');
+  const [leftWidth, setLeftWidth] = useState(40); // percentage
   const inputRef = useRef(null);
+  const containerRef = useRef(null);
+  const isDragging = useRef(false);
   const { sendMessage, isLoading, resetChat, messages } = useChat();
 
   const handleSubmit = async (e) => {
@@ -26,6 +29,42 @@ export default function ChatInterface() {
     }
   };
 
+  // Resize handlers
+  const handleMouseDown = useCallback((e) => {
+    e.preventDefault();
+    isDragging.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+
+  const handleMouseMove = useCallback((e) => {
+    if (!isDragging.current || !containerRef.current) return;
+
+    const container = containerRef.current;
+    const rect = container.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const percentage = (x / rect.width) * 100;
+
+    // Clamp between 20% and 80%
+    const clampedPercentage = Math.min(Math.max(percentage, 20), 80);
+    setLeftWidth(clampedPercentage);
+  }, []);
+
+  const handleMouseUp = useCallback(() => {
+    isDragging.current = false;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  }, []);
+
+  useEffect(() => {
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [handleMouseMove, handleMouseUp]);
+
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
@@ -35,7 +74,7 @@ export default function ChatInterface() {
       {/* Header */}
       <header className="chat-header glass">
         <h1>GenUI Chat</h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div className="header-actions">
           <ModelSelector />
           {messages.length > 0 && (
             <button className="btn btn-secondary" onClick={resetChat}>
@@ -45,15 +84,26 @@ export default function ChatInterface() {
         </div>
       </header>
 
-      {/* Chat Panel */}
-      <div className="chat-panel glass">
-        <MessageList />
-      </div>
+      {/* Main Content Area */}
+      <div className="main-content" ref={containerRef}>
+        {/* Chat Panel */}
+        <div className="chat-panel glass" style={{ width: `${leftWidth}%` }}>
+          <MessageList />
+        </div>
 
-      {/* Sandbox Panel */}
-      <div className="sandbox-panel glass">
-        <SandboxPreview />
-        <ExecutionLog />
+        {/* Resize Handle */}
+        <div
+          className="resize-handle"
+          onMouseDown={handleMouseDown}
+        >
+          <div className="resize-handle-bar" />
+        </div>
+
+        {/* Sandbox Panel */}
+        <div className="sandbox-panel glass" style={{ width: `${100 - leftWidth}%` }}>
+          <SandboxPreview />
+          <ExecutionLog />
+        </div>
       </div>
 
       {/* Input Area */}

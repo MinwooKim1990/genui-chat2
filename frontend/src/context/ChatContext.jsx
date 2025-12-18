@@ -87,6 +87,11 @@ export function ChatProvider({ children }) {
 
       const data = await response.json();
 
+      // Process web search sources
+      if (data.sources && data.sources.length > 0) {
+        addLog('tool', `Web search: Found ${data.sources.length} sources`);
+      }
+
       // Process tool usage
       if (data.toolsUsed) {
         data.toolsUsed.forEach(tool => {
@@ -98,6 +103,7 @@ export function ChatProvider({ children }) {
       const parsed = data.parsed || [];
       let assistantContent = '';
       let sandboxCode = null;
+      let sources = data.sources || [];
 
       for (const item of parsed) {
         if (item.type === 'thinking') {
@@ -105,6 +111,10 @@ export function ChatProvider({ children }) {
         } else if (item.type === 'sandbox') {
           addLog('sandbox', 'Building interactive app...');
           sandboxCode = item.code;
+          // Check for sources in sandbox item
+          if (item.sources) {
+            sources = item.sources;
+          }
         } else if (item.type === 'message') {
           assistantContent = item.content || '';
         }

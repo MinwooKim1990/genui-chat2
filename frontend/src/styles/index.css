@@ -104,22 +104,21 @@ body {
 
 /* Chat Interface Layout */
 .chat-interface {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: auto 1fr auto;
-  gap: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
   height: 100vh;
   padding: var(--spacing-md);
+  gap: var(--spacing-md);
   position: relative;
   z-index: 1;
 }
 
 .chat-header {
-  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: var(--spacing-md) var(--spacing-lg);
+  flex-shrink: 0;
 }
 
 .chat-header h1 {
@@ -131,11 +130,27 @@ body {
   background-clip: text;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+/* Main Content - Flex container for panels */
+.main-content {
+  display: flex;
+  flex: 1;
+  gap: 0;
+  min-height: 0;
+  position: relative;
+}
+
 .chat-panel {
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .sandbox-panel {
@@ -143,6 +158,33 @@ body {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* Resize Handle */
+.resize-handle {
+  width: 16px;
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+}
+
+.resize-handle:hover .resize-handle-bar,
+.resize-handle:active .resize-handle-bar {
+  background: var(--accent-primary);
+  width: 4px;
+}
+
+.resize-handle-bar {
+  width: 3px;
+  height: 48px;
+  background: var(--glass-border);
+  border-radius: 2px;
+  transition: all var(--transition-fast);
 }
 
 /* Messages Container */
@@ -235,10 +277,10 @@ body {
 
 /* Input Area */
 .input-area {
-  grid-column: 1 / -1;
   display: flex;
   gap: var(--spacing-md);
   padding: var(--spacing-md);
+  flex-shrink: 0;
 }
 
 .input-wrapper {
@@ -316,27 +358,61 @@ body {
   padding: 0;
 }
 
-/* Sandbox Container */
+/* Sandbox Container - CRITICAL FIX */
 .sandbox-container {
   flex: 1;
   border-radius: var(--radius-lg);
   overflow: hidden;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
+/* Sandpack Overrides - Make it fill container */
 .sandbox-container .sp-wrapper {
   height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
 .sandbox-container .sp-layout {
   height: 100% !important;
+  flex: 1 !important;
   border: none !important;
   background: transparent !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.sandbox-container .sp-stack {
+  height: 100% !important;
+  flex: 1 !important;
+}
+
+.sandbox-container .sp-preview-container {
+  height: 100% !important;
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
 .sandbox-container .sp-preview {
-  background: white;
+  height: 100% !important;
+  flex: 1 !important;
+  background: #ffffff;
   border-radius: var(--radius-md);
+}
+
+.sandbox-container .sp-preview iframe {
+  height: 100% !important;
+  min-height: 0 !important;
+}
+
+.sandbox-container .sp-preview-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
 }
 
 .sandbox-placeholder {
@@ -364,6 +440,8 @@ body {
   overflow-y: auto;
   font-family: var(--font-mono);
   font-size: 0.75rem;
+  flex-shrink: 0;
+  border-top: 1px solid var(--glass-border);
 }
 
 .log-entry {
@@ -576,14 +654,25 @@ body {
 
 /* Responsive */
 @media (max-width: 1024px) {
-  .chat-interface {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr 1fr auto;
+  .main-content {
+    flex-direction: column;
   }
 
   .chat-panel,
   .sandbox-panel {
+    width: 100% !important;
     min-height: 300px;
+  }
+
+  .resize-handle {
+    width: 100%;
+    height: 16px;
+    cursor: row-resize;
+  }
+
+  .resize-handle-bar {
+    width: 48px;
+    height: 3px;
   }
 }
 
@@ -599,8 +688,13 @@ body {
     padding: var(--spacing-sm);
   }
 
-  .model-selector {
+  .header-actions {
     width: 100%;
+    justify-content: space-between;
+  }
+
+  .model-selector {
+    flex: 1;
   }
 
   .model-selector select {
