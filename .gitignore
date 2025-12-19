@@ -1,38 +1,49 @@
 # Dependencies
 node_modules/
+**/node_modules/
 
 # Build output
 dist/
+**/dist/
 build/
+**/build/
+.vite/
+**/.vite/
 
-# Environment variables
+# Environment files
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 # Logs
-logs/
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+pnpm-error.log*
 
-# OS files
+# Runtime/generated media
+backend/media/
+
+# Cloudflare tunnel secrets
+cloudflared/*.json
+cloudflared/*.pem
+cloudflared/*.cert
+cloudflared/*.crt
+
+# Editor/OS
+.vscode/
+.idea/
 .DS_Store
 Thumbs.db
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Testing
+# Caches
+.eslintcache
 coverage/
-
-# Misc
-*.tgz
-.cache/
+.nyc_output/
 
 .claude/
-
-backend/media/
+cloudflared/
 official_docs/
+*.bat

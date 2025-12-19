@@ -9,11 +9,13 @@ export default function ChatInterface() {
   const [input, setInput] = useState('');
   const [leftWidth, setLeftWidth] = useState(40); // percentage
   const [pendingFiles, setPendingFiles] = useState([]);
+  const [activePanel, setActivePanel] = useState('chat');
+  const [isMobile, setIsMobile] = useState(false);
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
   const containerRef = useRef(null);
   const isDragging = useRef(false);
-  const { sendMessage, isLoading, resetChat, messages } = useChat();
+  const { sendMessage, isLoading, resetChat, messages, currentSandbox } = useChat();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -85,6 +87,25 @@ export default function ChatInterface() {
     inputRef.current?.focus();
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const media = window.matchMedia('(max-width: 1024px)');
+    const handleChange = () => setIsMobile(media.matches);
+    handleChange();
+    if (media.addEventListener) {
+      media.addEventListener('change', handleChange);
+      return () => media.removeEventListener('change', handleChange);
+    }
+    media.addListener(handleChange);
+    return () => media.removeListener(handleChange);
+  }, []);
+
+  useEffect(() => {
+    if (isMobile && currentSandbox) {
+      setActivePanel('sandbox');
+    }
+  }, [isMobile, currentSandbox]);
+
   return (
     <div className="chat-interface">
       {/* Header */}
@@ -100,10 +121,30 @@ export default function ChatInterface() {
         </div>
       </header>
 
+      <div className="mobile-toggle glass">
+        <button
+          type="button"
+          className={`mobile-toggle-btn ${activePanel === 'chat' ? 'active' : ''}`}
+          onClick={() => setActivePanel('chat')}
+        >
+          Chat
+        </button>
+        <button
+          type="button"
+          className={`mobile-toggle-btn ${activePanel === 'sandbox' ? 'active' : ''}`}
+          onClick={() => setActivePanel('sandbox')}
+        >
+          Gen UI
+        </button>
+      </div>
+
       {/* Main Content Area */}
       <div className="main-content" ref={containerRef}>
         {/* Chat Panel */}
-        <div className="chat-panel glass" style={{ width: `${leftWidth}%` }}>
+        <div
+          className={`chat-panel glass ${activePanel === 'chat' ? '' : 'panel-hidden'}`}
+          style={{ width: `${leftWidth}%` }}
+        >
           <MessageList />
         </div>
 
@@ -116,7 +157,10 @@ export default function ChatInterface() {
         </div>
 
         {/* Sandbox Panel */}
-        <div className="sandbox-panel glass" style={{ width: `${100 - leftWidth}%` }}>
+        <div
+          className={`sandbox-panel glass ${activePanel === 'sandbox' ? '' : 'panel-hidden'}`}
+          style={{ width: `${100 - leftWidth}%` }}
+        >
           <SandboxPreview />
           <ExecutionLog />
         </div>

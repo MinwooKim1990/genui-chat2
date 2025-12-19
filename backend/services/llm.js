@@ -62,25 +62,27 @@ Even for questions, news, weather, etc. - CREATE AN APP that displays the inform
 
 OUTPUT FORMAT (MANDATORY):
 \`\`\`json
-{"type":"sandbox","code":{"App.js":"YOUR_REACT_CODE","styles.css":"YOUR_CSS"},"sources":[{"title":"...","url":"...","image":"..."}]}
+{"type":"sandbox","message":"요약...\\n사용법...","code":{"App.js":"YOUR_REACT_CODE","styles.css":"YOUR_CSS"},"sources":[{"title":"...","url":"...","image":"..."}]}
 \`\`\`
 
 RULES:
 1. ALWAYS create an interactive React app - NEVER just text
 2. Use the user's language for all UI text
-3. If sources are provided or web search is used, include a visible Sources section and populate the "sources" array
-4. If sources include image URLs (sources[].image) use them in the UI
-5. Prefer item.image or sources[].image for primary images; use image_fallback ONLY as onError fallback
-6. Prefer charts/diagrams (SVG, recharts, chart.js) for visualizations; images are a last resort
-7. Do NOT call generate_image unless the user explicitly asks OR context.image_policy.mode allows it and diagrams are insufficient; never exceed context.image_policy.max
-8. For news/web search requests, never generate images; use source images or fallback placeholders
-9. For <img> elements, always set onError to swap to a fallback image URL
-10. If attachments include public_url, you may render them with img/video/audio or link in the UI
-11. If context.generated_images exists, you MUST use those URLs as primary visuals (do not use random image URLs)
-12. Keep output concise: avoid embedding full documents, cap large lists, and keep App.js + styles reasonably small (aim under ~200KB per file)
-13. App must fill container: min-height: 100vh; width: 100%;
-14. When context JSON is provided, use ONLY the URLs/images from context.plan/items or context.sources; never fabricate links
-15. Default to a clean, modern UI. Use dark glassmorphism unless user requests a different style
+3. ALWAYS include a "message" field in the sandbox JSON. It is shown in the chat panel.
+4. "message" must be 2-3 short lines: line 1 = summary, line 2 = usage (buttons/controls), line 3 optional
+5. If sources are provided or web search is used, include a visible Sources section and populate the "sources" array
+6. If sources include image URLs (sources[].image) use them in the UI
+7. Prefer item.image or sources[].image for primary images; use image_fallback ONLY as onError fallback
+8. Prefer charts/diagrams (SVG, recharts, chart.js) for visualizations; images are a last resort
+9. Do NOT call generate_image unless the user explicitly asks OR context.image_policy.mode allows it and diagrams are insufficient; never exceed context.image_policy.max
+10. For news/web search requests, never generate images; use source images or fallback placeholders
+11. For <img> elements, always set onError to swap to a fallback image URL
+12. If attachments include public_url, you may render them with img/video/audio or link in the UI
+13. If context.generated_images exists, you MUST use those URLs as primary visuals (do not use random image URLs)
+14. Keep output concise: avoid embedding full documents, cap large lists, and keep App.js + styles reasonably small (aim under ~200KB per file)
+15. App must fill container: min-height: 100vh; width: 100%;
+16. When context JSON is provided, use ONLY the URLs/images from context.plan/items or context.sources; never fabricate links
+17. Default to a clean, modern UI. Use dark glassmorphism unless user requests a different style
 
 ALLOWED LIBRARIES (ONLY USE THESE):
 - react, react-dom (built-in)
@@ -179,7 +181,14 @@ function parseResponse(content) {
 
         if (parsed.type === 'sandbox' && parsed.code) {
           console.log('[Parse] Successfully parsed sandbox JSON');
-          return [parsed];
+          const items = [];
+          if (typeof parsed.message === 'string' && parsed.message.trim()) {
+            items.push({ type: 'message', content: parsed.message });
+          }
+          const sandbox = { ...parsed };
+          delete sandbox.message;
+          items.push(sandbox);
+          return items;
         }
 
         if (parsed.type) {
