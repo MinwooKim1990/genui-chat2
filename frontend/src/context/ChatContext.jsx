@@ -100,21 +100,17 @@ export function ChatProvider({ children }) {
       const userMessageWithFiles = { ...userMessage, attachments };
       dispatch({ type: 'UPDATE_LAST_MESSAGE', payload: { attachments } });
 
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [...state.messages, userMessageWithFiles].map(m => ({
-            role: m.role,
-            content: m.content,
-            attachments: m.attachments
-          })),
-          provider: state.provider,
-          model: state.model
-        })
-      });
+      const payload = {
+        messages: [...state.messages, userMessageWithFiles].map(m => ({
+          role: m.role,
+          content: m.content,
+          attachments: m.attachments
+        })),
+        provider: state.provider,
+        model: state.model
+      };
 
-      if (!response.ok) {
+      const readErrorMessage = async (response) => {
         let errorMessage = `Server error: ${response.status}`;
         try {
           const errorData = await response.json();
@@ -127,10 +123,131 @@ export function ChatProvider({ children }) {
             // keep default
           }
         }
-        throw new Error(errorMessage);
-      }
+        return errorMessage;
+      };
 
-      const data = await response.json();
+      const parseSseEvent = (rawEvent) => {
+        if (!rawEvent) return null;
+        const lines = rawEvent.split('\n');
+        let event = 'message';
+        const dataLines = [];
+        for (const line of lines) {
+          if (line.startsWith('event:')) {
+            event = line.slice(6).trim();
+          } else if (line.startsWith('data:')) {
+            dataLines.push(line.slice(5).trimStart());
+          }
+        }
+        if (dataLines.length === 0) return null;
+        const dataText = dataLines.join('\n');
+        let data = dataText;
+        try {
+          data = JSON.parse(dataText);
+        } catch {
+          // keep as string
+        }
+        return { event, data };
+      };
+
+      const fetchChatJson = async () => {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response));
+        }
+
+        return response.json();
+      };
+
+      const fetchChatStream = async () => {
+        const response = await fetch('/api/chat/stream', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.status === 404) {
+          const err = new Error('SSE_UNSUPPORTED');
+          err.code = 'SSE_UNSUPPORTED';
+          throw err;
+        }
+
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response));
+        }
+
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('text/event-stream')) {
+          try {
+            return await response.json();
+          } catch {
+            const err = new Error('SSE_UNSUPPORTED');
+            err.code = 'SSE_UNSUPPORTED';
+            throw err;
+          }
+        }
+
+        if (!response.body) {
+          const err = new Error('SSE_UNSUPPORTED');
+          err.code = 'SSE_UNSUPPORTED';
+          throw err;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let resultData = null;
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          let separatorIndex = buffer.indexOf('\n\n');
+          while (separatorIndex !== -1) {
+            const rawEvent = buffer.slice(0, separatorIndex);
+            buffer = buffer.slice(separatorIndex + 2);
+            const parsedEvent = parseSseEvent(rawEvent);
+            if (parsedEvent) {
+              if (parsedEvent.event === 'result') {
+                resultData = parsedEvent.data;
+              } else if (parsedEvent.event === 'error') {
+                const message = parsedEvent.data?.error || parsedEvent.data?.message || 'Server error';
+                throw new Error(message);
+              } else if (parsedEvent.event === 'status') {
+                if (parsedEvent.data?.message) {
+                  addLog('info', parsedEvent.data.message);
+                }
+              }
+            }
+            separatorIndex = buffer.indexOf('\n\n');
+          }
+        }
+
+        if (!resultData) {
+          throw new Error('No response from server');
+        }
+
+        return resultData;
+      };
+
+      let data;
+      try {
+        data = await fetchChatStream();
+      } catch (error) {
+        if (error.code === 'SSE_UNSUPPORTED') {
+          data = await fetchChatJson();
+        } else {
+          throw error;
+        }
+      }
 
       // Process web search sources
       if (data.sources && data.sources.length > 0) {
