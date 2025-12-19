@@ -5,8 +5,8 @@ const PROVIDERS = {
   openai: {
     name: 'OpenAI',
     models: [
-      { id: 'gpt-5-mini', name: 'GPT-5 Mini' },
-      { id: 'gpt-5.2', name: 'GPT-5.2' }
+      { id: 'gpt-5-mini-2025-08-07', name: 'GPT-5 Mini (2025-08-07)' },
+      { id: 'gpt-5.2-2025-12-11', name: 'GPT-5.2 (2025-12-11)' }
     ]
   },
   gemini: {

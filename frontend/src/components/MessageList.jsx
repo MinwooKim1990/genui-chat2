@@ -59,6 +59,20 @@ function Message({ message }) {
           message.content
         )}
       </div>
+      {message.attachments?.length > 0 && (
+        <div className="message-attachments">
+          {message.attachments.map((att, idx) => (
+            <div key={`${att.id || att.name}-${idx}`} className="message-attachment">
+              <span className="attachment-label">{att.name}</span>
+              {att.publicUrl && (
+                <a className="attachment-link" href={att.publicUrl} target="_blank" rel="noreferrer">
+                  Open
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
       {message.sandbox && (
         <div style={{
           marginTop: '0.5rem',

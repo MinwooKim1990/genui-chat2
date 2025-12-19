@@ -6,7 +6,7 @@ const router = Router();
 // Main chat endpoint
 router.post('/', async (req, res) => {
   try {
-    const { messages, provider, model } = req.body;
+    const { messages, provider, model, enableWebSearch } = req.body;
 
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({ error: 'Messages array required' });
@@ -19,7 +19,7 @@ router.post('/', async (req, res) => {
       messages,
       provider,
       model,
-      enableWebSearch: true
+      enableWebSearch: enableWebSearch !== undefined ? enableWebSearch : true
     });
 
     console.log(`[Chat] Response: parsed=${result.parsed?.length}, sources=${result.sources?.length}`);

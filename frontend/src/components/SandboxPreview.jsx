@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   SandpackProvider,
   SandpackLayout,
@@ -55,13 +55,105 @@ const SANDBOX_DEPENDENCIES = {
   'date-fns': '^3.0.6'
 };
 
+const LOCAL_MEDIA_PREFIXES = [
+  'http://localhost:5173/media/',
+  'http://127.0.0.1:5173/media/',
+  'https://localhost:5173/media/',
+  'https://127.0.0.1:5173/media/',
+  '/media/'
+];
+
+function findLocalMediaUrls(code) {
+  const results = new Set();
+  if (!code || typeof code !== 'string') return results;
+
+  for (const prefix of LOCAL_MEDIA_PREFIXES) {
+    let index = code.indexOf(prefix);
+    while (index !== -1) {
+      let end = index + prefix.length;
+      while (end < code.length) {
+        const ch = code[end];
+        if (ch === '"' || ch === '\'' || ch === '`' || ch === ')' || ch === '}' || ch === ']' || ch === '\n' || ch === '\r' || ch === ' ') {
+          break;
+        }
+        end += 1;
+      }
+      const url = code.slice(index, end);
+      if (url.includes('/media/')) {
+        results.add(url);
+      }
+      index = code.indexOf(prefix, end);
+    }
+  }
+
+  return results;
+}
+
+function normalizeLocalMediaUrl(rawUrl, origin) {
+  if (!rawUrl) return null;
+  if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+    return rawUrl;
+  }
+  if (rawUrl.startsWith('/')) {
+    return `${origin}${rawUrl}`;
+  }
+  return `${origin}/${rawUrl}`;
+}
+
+async function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function replaceLocalMediaUrls(code, cache) {
+  if (!code || typeof code !== 'string') return code;
+
+  const matches = Array.from(findLocalMediaUrls(code));
+  if (matches.length === 0) return code;
+
+  const origin = window.location.origin;
+  let updated = code;
+
+  for (const rawUrl of matches) {
+    const absoluteUrl = normalizeLocalMediaUrl(rawUrl, origin);
+    if (!absoluteUrl.startsWith(`${origin}/media/`)) continue;
+
+    let dataUrl = cache.get(absoluteUrl);
+    if (!dataUrl) {
+      try {
+        const response = await fetch(absoluteUrl, { cache: 'no-store' });
+        if (!response.ok) continue;
+        const blob = await response.blob();
+        dataUrl = await blobToDataUrl(blob);
+        cache.set(absoluteUrl, dataUrl);
+      } catch {
+        continue;
+      }
+    }
+
+    if (dataUrl) {
+      updated = updated.split(rawUrl).join(dataUrl);
+    }
+  }
+
+  return updated;
+}
+
 export default function SandboxPreview() {
   const { currentSandbox, addLog, repairError } = useChat();
   const [files, setFiles] = useState(DEFAULT_FILES);
   const [key, setKey] = useState(0);
+  const mediaCacheRef = useRef(new Map());
 
   useEffect(() => {
-    if (currentSandbox) {
+    let cancelled = false;
+
+    async function prepareSandbox() {
+      if (!currentSandbox) return;
       const newFiles = {
         '/styles.css': currentSandbox['styles.css'] || DEFAULT_FILES['/styles.css']
       };
@@ -75,9 +167,22 @@ export default function SandboxPreview() {
         newFiles['/App.js'] = currentSandbox;
       }
 
+      if (newFiles['/App.js']) {
+        newFiles['/App.js'] = await replaceLocalMediaUrls(newFiles['/App.js'], mediaCacheRef.current);
+      }
+      if (newFiles['/styles.css']) {
+        newFiles['/styles.css'] = await replaceLocalMediaUrls(newFiles['/styles.css'], mediaCacheRef.current);
+      }
+
+      if (cancelled) return;
       setFiles(newFiles);
       setKey(k => k + 1); // Force remount
     }
+    prepareSandbox();
+
+    return () => {
+      cancelled = true;
+    };
   }, [currentSandbox]);
 
   const handleError = (error) => {

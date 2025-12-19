@@ -9,8 +9,8 @@ const initialState = {
   error: null,
   currentSandbox: null,
   executionLog: [],
-  provider: 'openai',
-  model: 'gpt-5-mini'
+  provider: 'gemini',
+  model: 'gemini-3-flash-preview'
 };
 
 function chatReducer(state, action) {
@@ -58,7 +58,26 @@ export function ChatProvider({ children }) {
     dispatch({ type: 'ADD_LOG', payload: { type, message } });
   }, []);
 
-  const sendMessage = useCallback(async (content) => {
+  const uploadFiles = useCallback(async (files) => {
+    if (!files || files.length === 0) return [];
+
+    const formData = new FormData();
+    files.forEach((file) => formData.append('files', file));
+
+    const response = await fetch(`/api/files/upload?provider=${state.provider}`, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) {
+      throw new Error(`Upload failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.files || [];
+  }, [state.provider]);
+
+  const sendMessage = useCallback(async (content, files = []) => {
     const userMessage = { role: 'user', content, timestamp: Date.now() };
     dispatch({ type: 'ADD_MESSAGE', payload: userMessage });
     dispatch({ type: 'SET_LOADING', payload: true });
@@ -68,13 +87,27 @@ export function ChatProvider({ children }) {
     addLog('info', 'Sending message to AI...');
 
     try {
+      let attachments = [];
+      if (files.length > 0) {
+        addLog('info', `Uploading ${files.length} file(s)...`);
+        attachments = await uploadFiles(files);
+        const failed = attachments.filter(item => item.error);
+        if (failed.length > 0) {
+          addLog('warning', `${failed.length} file(s) uploaded with warnings`);
+        }
+      }
+
+      const userMessageWithFiles = { ...userMessage, attachments };
+      dispatch({ type: 'UPDATE_LAST_MESSAGE', payload: { attachments } });
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [...state.messages, userMessage].map(m => ({
+          messages: [...state.messages, userMessageWithFiles].map(m => ({
             role: m.role,
-            content: m.content
+            content: m.content,
+            attachments: m.attachments
           })),
           provider: state.provider,
           model: state.model
@@ -82,7 +115,19 @@ export function ChatProvider({ children }) {
       });
 
       if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`);
+        let errorMessage = `Server error: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData?.error || errorData?.message || errorMessage;
+        } catch {
+          try {
+            const text = await response.text();
+            if (text) errorMessage = text;
+          } catch {
+            // keep default
+          }
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
@@ -165,7 +210,7 @@ export function ChatProvider({ children }) {
       }
 
       // Save session
-      const updatedMessages = [...state.messages, userMessage, assistantMessage];
+      const updatedMessages = [...state.messages, userMessageWithFiles, assistantMessage];
       saveSession(updatedMessages);
 
     } catch (error) {
@@ -175,7 +220,7 @@ export function ChatProvider({ children }) {
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
-  }, [state.messages, state.provider, state.model, addLog, saveSession]);
+  }, [state.messages, state.provider, state.model, addLog, saveSession, uploadFiles]);
 
   const repairError = useCallback(async (errorMessage) => {
     dispatch({ type: 'SET_LOADING', payload: true });
@@ -194,7 +239,19 @@ export function ChatProvider({ children }) {
       });
 
       if (!response.ok) {
-        throw new Error(`Repair failed: ${response.status}`);
+        let errorMessage = `Repair failed: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData?.error || errorData?.message || errorMessage;
+        } catch {
+          try {
+            const text = await response.text();
+            if (text) errorMessage = text;
+          } catch {
+            // keep default
+          }
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
@@ -208,7 +265,10 @@ export function ChatProvider({ children }) {
           payload: { sandbox: sandboxItem.code }
         });
         addLog('success', 'Error fixed! App updated.');
-        saveSession(state.messages);
+        const updatedMessages = state.messages.map((msg, idx) =>
+          idx === state.messages.length - 1 ? { ...msg, sandbox: sandboxItem.code } : msg
+        );
+        saveSession(updatedMessages);
       } else {
         throw new Error('No valid fix generated');
       }

@@ -3,11 +3,15 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import chatRoutes from './routes/chat.js';
 import toolRoutes from './routes/tools.js';
+import fileRoutes from './routes/files.js';
+import { ensureMediaDirs, MEDIA_ROOT } from './services/media.js';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+ensureMediaDirs();
 
 // Middleware
 app.use(cors({
@@ -15,6 +19,7 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));
+app.use('/media', express.static(MEDIA_ROOT));
 
 // Health check
 app.get('/health', (req, res) => {
@@ -24,6 +29,7 @@ app.get('/health', (req, res) => {
 // Routes
 app.use('/api/chat', chatRoutes);
 app.use('/api/tools', toolRoutes);
+app.use('/api/files', fileRoutes);
 
 // Error handler
 app.use((err, req, res, next) => {

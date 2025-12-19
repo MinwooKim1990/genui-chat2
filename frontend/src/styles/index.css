@@ -275,9 +275,46 @@ body {
   padding: 0;
 }
 
+.message-attachments {
+  margin-top: var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  font-size: 0.85rem;
+}
+
+.message-attachment {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--glass-border);
+}
+
+.attachment-label {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-link {
+  color: var(--accent-primary);
+  text-decoration: none;
+  font-size: 0.8rem;
+}
+
+.attachment-link:hover {
+  text-decoration: underline;
+}
+
 /* Input Area */
 .input-area {
   display: flex;
+  flex-direction: column;
   gap: var(--spacing-md);
   padding: var(--spacing-md);
   flex-shrink: 0;
@@ -287,6 +324,45 @@ body {
   flex: 1;
   display: flex;
   gap: var(--spacing-sm);
+}
+
+.attachments-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--glass-border);
+  font-size: 0.875rem;
+}
+
+.attachment-name {
+  color: var(--text-secondary);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-remove {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 0.25rem;
+}
+
+.attachment-remove:hover {
+  color: var(--text-primary);
 }
 
 .chat-input {

@@ -8,18 +8,23 @@ import ModelSelector from './ModelSelector';
 export default function ChatInterface() {
   const [input, setInput] = useState('');
   const [leftWidth, setLeftWidth] = useState(40); // percentage
+  const [pendingFiles, setPendingFiles] = useState([]);
   const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
   const containerRef = useRef(null);
   const isDragging = useRef(false);
   const { sendMessage, isLoading, resetChat, messages } = useChat();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    if (isLoading) return;
+    if (!input.trim() && pendingFiles.length === 0) return;
 
-    const message = input.trim();
+    const message = input.trim() || 'Please analyze the attached file(s).';
     setInput('');
-    await sendMessage(message);
+    const filesToSend = pendingFiles;
+    setPendingFiles([]);
+    await sendMessage(message, filesToSend);
   };
 
   const handleKeyDown = (e) => {
@@ -27,6 +32,17 @@ export default function ChatInterface() {
       e.preventDefault();
       handleSubmit(e);
     }
+  };
+
+  const handleFileChange = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setPendingFiles((prev) => [...prev, ...files]);
+    e.target.value = '';
+  };
+
+  const handleRemoveFile = (index) => {
+    setPendingFiles((prev) => prev.filter((_, idx) => idx !== index));
   };
 
   // Resize handlers
@@ -109,6 +125,22 @@ export default function ChatInterface() {
       {/* Input Area */}
       <form className="input-area glass" onSubmit={handleSubmit}>
         <div className="input-wrapper">
+          <button
+            type="button"
+            className="btn btn-secondary btn-icon"
+            onClick={() => fileInputRef.current?.click()}
+            title="Attach files"
+            disabled={isLoading}
+          >
+            <AttachIcon />
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            onChange={handleFileChange}
+            style={{ display: 'none' }}
+          />
           <input
             ref={inputRef}
             type="text"
@@ -122,12 +154,29 @@ export default function ChatInterface() {
           <button
             type="submit"
             className="btn btn-primary btn-icon"
-            disabled={isLoading || !input.trim()}
+            disabled={isLoading || (!input.trim() && pendingFiles.length === 0)}
             title="Send message"
           >
             <SendIcon />
           </button>
         </div>
+        {pendingFiles.length > 0 && (
+          <div className="attachments-preview">
+            {pendingFiles.map((file, index) => (
+              <div key={`${file.name}-${index}`} className="attachment-chip">
+                <span className="attachment-name">{file.name}</span>
+                <button
+                  type="button"
+                  className="attachment-remove"
+                  onClick={() => handleRemoveFile(index)}
+                  title="Remove file"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </form>
     </div>
   );
@@ -137,6 +186,14 @@ function SendIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" />
+    </svg>
+  );
+}
+
+function AttachIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M21.44 11.05l-8.49 8.49a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.19 9.19a2 2 0 0 1-2.83-2.83l8.49-8.49" />
     </svg>
   );
 }

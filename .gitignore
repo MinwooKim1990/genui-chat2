@@ -33,3 +33,6 @@ coverage/
 .cache/
 
 .claude/
+
+backend/media/
+official_docs/

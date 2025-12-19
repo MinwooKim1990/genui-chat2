@@ -108,3 +108,75 @@ export async function fetchPage(url, options = {}) {
     };
   }
 }
+
+function resolveUrl(baseUrl, maybeRelative) {
+  try {
+    return new URL(maybeRelative, baseUrl).toString();
+  } catch {
+    return maybeRelative;
+  }
+}
+
+// Fetch page metadata (title/description/image)
+export async function fetchUrlMetadata(url, options = {}) {
+  const { timeout = 8000 } = options;
+
+  try {
+    const parsedUrl = new URL(url);
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      throw new Error('Invalid URL protocol');
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      }
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const html = await response.text();
+    const $ = cheerio.load(html);
+
+    const title = $('meta[property="og:title"]').attr('content') ||
+      $('meta[name="twitter:title"]').attr('content') ||
+      $('title').text().trim() ||
+      '';
+
+    const description = $('meta[property="og:description"]').attr('content') ||
+      $('meta[name="twitter:description"]').attr('content') ||
+      $('meta[name="description"]').attr('content') ||
+      '';
+
+    const image = $('meta[property="og:image"]').attr('content') ||
+      $('meta[name="twitter:image"]').attr('content') ||
+      $('meta[property="og:image:url"]').attr('content') ||
+      '';
+
+    return {
+      url,
+      title: title.trim(),
+      description: description.trim(),
+      image: image ? resolveUrl(url, image) : null,
+      success: true
+    };
+  } catch (error) {
+    return {
+      url,
+      title: '',
+      description: '',
+      image: null,
+      success: false,
+      error: error.message
+    };
+  }
+}
