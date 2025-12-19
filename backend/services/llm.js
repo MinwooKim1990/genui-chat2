@@ -71,13 +71,13 @@ RULES:
 3. If sources are provided or web search is used, include a visible Sources section and populate the "sources" array
 4. If sources include image URLs (sources[].image) use them in the UI
 5. Prefer item.image or sources[].image for primary images; use image_fallback ONLY as onError fallback
-6. When you need images for sources, call fetch_url_metadata on relevant URLs to get image URLs
-7. Do NOT call generate_image unless the user explicitly asks for new images OR context.generated_images is provided
+6. Prefer charts/diagrams (SVG, recharts, chart.js) for visualizations; images are a last resort
+7. Do NOT call generate_image unless the user explicitly asks OR context.image_policy.mode allows it and diagrams are insufficient; never exceed context.image_policy.max
 8. For news/web search requests, never generate images; use source images or fallback placeholders
 9. For <img> elements, always set onError to swap to a fallback image URL
 10. If attachments include public_url, you may render them with img/video/audio or link in the UI
 11. If context.generated_images exists, you MUST use those URLs as primary visuals (do not use random image URLs)
-12. Keep output concise: avoid embedding full documents, cap large lists, and keep App.js + styles reasonably small
+12. Keep output concise: avoid embedding full documents, cap large lists, and keep App.js + styles reasonably small (aim under ~200KB per file)
 13. App must fill container: min-height: 100vh; width: 100%;
 14. When context JSON is provided, use ONLY the URLs/images from context.plan/items or context.sources; never fabricate links
 15. Default to a clean, modern UI. Use dark glassmorphism unless user requests a different style
@@ -404,7 +404,7 @@ function getImagePolicy(text) {
   if (!text) return { mode: 'none', max: 0 };
   if (isNewsRequest(text)) return { mode: 'none', max: 0 };
   if (hasExplicitImageRequest(text)) return { mode: 'explicit', max: 3 };
-  if (wantsVisualAid(text)) return { mode: 'assist', max: 2 };
+  if (wantsVisualAid(text)) return { mode: 'assist', max: 1 };
   return { mode: 'none', max: 0 };
 }
 
@@ -448,6 +448,7 @@ function buildImagePromptFromText(text, language = 'en') {
 
 async function generateImageForPrompt({ prompt, provider }) {
   try {
+    console.log(`[Image] Generating (${provider})`);
     if (provider === 'openai') {
       return await generateOpenAIImage({ prompt });
     }
@@ -758,7 +759,7 @@ function extractOpenAIFunctionCalls(output) {
   return output.filter(item => item.type === 'function_call');
 }
 
-async function executeOpenAIToolCalls(toolCalls, { allowImageGeneration = true } = {}) {
+async function executeOpenAIToolCalls(toolCalls, { allowImageGeneration = true, imageState } = {}) {
   const outputs = [];
 
   for (const call of toolCalls) {
@@ -775,6 +776,14 @@ async function executeOpenAIToolCalls(toolCalls, { allowImageGeneration = true }
           });
           continue;
         }
+        if (imageState && imageState.remaining <= 0) {
+          outputs.push({
+            type: 'function_call_output',
+            call_id: callId,
+            output: JSON.stringify({ error: 'Image generation limit reached for this request.' })
+          });
+          continue;
+        }
         const prompt = args.prompt;
         if (!prompt) {
           throw new Error('generate_image requires a prompt');
@@ -783,6 +792,7 @@ async function executeOpenAIToolCalls(toolCalls, { allowImageGeneration = true }
           args.prompt = `${prompt} (aspect ratio ${args.aspect_ratio})`;
         }
         const image = await generateOpenAIImage({ prompt: args.prompt || prompt });
+        if (imageState) imageState.remaining -= 1;
         outputs.push({
           type: 'function_call_output',
           call_id: callId,
@@ -837,6 +847,7 @@ function shouldIncludeContext(context) {
   if (Array.isArray(context.sources) && context.sources.length > 0) return true;
   if (Array.isArray(context.attachments) && context.attachments.length > 0) return true;
   if (Array.isArray(context.generated_images) && context.generated_images.length > 0) return true;
+  if (context.image_policy) return true;
   return false;
 }
 
@@ -922,6 +933,8 @@ async function callOpenAIWithTools({ messages, model, enableWebSearch, context, 
   }
 
   const include = enableWebSearch ? ['web_search_call.action.sources'] : undefined;
+  const allowImageGeneration = imagePolicy?.mode !== 'none';
+  const imageState = { remaining: imagePolicy?.max ?? 0 };
   let data = await callOpenAIResponse({
     model,
     instructions: SYSTEM_PROMPT,
@@ -933,13 +946,11 @@ async function callOpenAIWithTools({ messages, model, enableWebSearch, context, 
 
   let sources = extractOpenAISources(data.output);
 
-  const allowImageGeneration = imagePolicy?.mode !== 'none';
-
   for (let attempt = 0; attempt < 4; attempt++) {
     const toolCalls = extractOpenAIFunctionCalls(data.output);
     if (toolCalls.length === 0) break;
 
-    const toolOutputs = await executeOpenAIToolCalls(toolCalls, { allowImageGeneration });
+    const toolOutputs = await executeOpenAIToolCalls(toolCalls, { allowImageGeneration, imageState });
     input = [...input, ...data.output, ...toolOutputs];
 
     data = await callOpenAIResponse({
@@ -1165,6 +1176,7 @@ async function callGeminiWithTools({ messages, model, context, imagePolicy }) {
   });
 
   const allowImageGeneration = imagePolicy?.mode !== 'none';
+  const imageState = { remaining: imagePolicy?.max ?? 0 };
 
   for (let attempt = 0; attempt < 4; attempt++) {
     const functionCalls = getGeminiFunctionCalls(data);
@@ -1182,6 +1194,15 @@ async function callGeminiWithTools({ messages, model, context, imagePolicy }) {
           });
           continue;
         }
+        if (imageState.remaining <= 0) {
+          functionResponses.push({
+            functionResponse: {
+              name: call.name,
+              response: { error: 'Image generation limit reached for this request.' }
+            }
+          });
+          continue;
+        }
         try {
           if (!call.args?.prompt) {
             throw new Error('generate_image requires a prompt');
@@ -1193,6 +1214,7 @@ async function callGeminiWithTools({ messages, model, context, imagePolicy }) {
             quality: call.args?.quality
           });
 
+          imageState.remaining -= 1;
           functionResponses.push({
             functionResponse: {
               name: call.name,
@@ -1200,6 +1222,7 @@ async function callGeminiWithTools({ messages, model, context, imagePolicy }) {
             }
           });
         } catch (error) {
+          imageState.remaining -= 1;
           functionResponses.push({
             functionResponse: {
               name: call.name,
@@ -1246,7 +1269,7 @@ async function callGeminiFlow({ messages, model, enableWebSearch }) {
   if (enableWebSearch) {
     let baseContext = await callGeminiGroundedPlan({ messages, model });
     const attachments = collectAttachmentContext(messages, 'gemini');
-    if (allowImages && baseContext.plan) {
+    if (imagePolicy.mode === 'explicit' && baseContext.plan) {
       baseContext = {
         ...baseContext,
         plan: await ensurePlanImages({
@@ -1258,8 +1281,8 @@ async function callGeminiFlow({ messages, model, enableWebSearch }) {
       };
     }
 
-    const context = { ...baseContext, attachments };
-    if (allowImages && (!context.plan?.items || context.plan.items.length === 0)) {
+    const context = { ...baseContext, attachments, image_policy: imagePolicy };
+    if (imagePolicy.mode === 'explicit' && (!context.plan?.items || context.plan.items.length === 0)) {
       const prompt = buildImagePromptFromText(lastUserText, context.plan?.language || 'ko');
       const generated = await generateImageForPrompt({ prompt, provider: 'gemini' });
       if (generated?.url) {
@@ -1274,8 +1297,8 @@ async function callGeminiFlow({ messages, model, enableWebSearch }) {
   }
 
   const attachments = collectAttachmentContext(messages, 'gemini');
-  const context = { plan: null, sources: [], attachments };
-  if (allowImages) {
+  const context = { plan: null, sources: [], attachments, image_policy: imagePolicy };
+  if (imagePolicy.mode === 'explicit') {
     const prompt = buildImagePromptFromText(lastUserText, 'ko');
     const generated = await generateImageForPrompt({ prompt, provider: 'gemini' });
     if (generated?.url) {
@@ -1298,7 +1321,7 @@ async function callOpenAIFlow({ messages, model, enableWebSearch }) {
 
   if (enableWebSearch) {
     let baseContext = await callOpenAIPlan({ messages, model, enableWebSearch });
-    if (allowImages && baseContext.plan) {
+    if (imagePolicy.mode === 'explicit' && baseContext.plan) {
       baseContext = {
         ...baseContext,
         plan: await ensurePlanImages({
@@ -1309,8 +1332,8 @@ async function callOpenAIFlow({ messages, model, enableWebSearch }) {
         })
       };
     }
-    const context = { ...baseContext, attachments };
-    if (allowImages && (!context.plan?.items || context.plan.items.length === 0)) {
+    const context = { ...baseContext, attachments, image_policy: imagePolicy };
+    if (imagePolicy.mode === 'explicit' && (!context.plan?.items || context.plan.items.length === 0)) {
       const prompt = buildImagePromptFromText(lastUserText, 'en');
       const generated = await generateImageForPrompt({ prompt, provider: 'openai' });
       if (generated?.url) {
@@ -1324,8 +1347,10 @@ async function callOpenAIFlow({ messages, model, enableWebSearch }) {
     return callOpenAIWithTools({ messages, model, enableWebSearch: false, context, imagePolicy });
   }
 
-  const context = attachments.length > 0 ? { plan: null, sources: [], attachments } : { plan: null, sources: [] };
-  if (allowImages) {
+  const context = attachments.length > 0
+    ? { plan: null, sources: [], attachments, image_policy: imagePolicy }
+    : { plan: null, sources: [], image_policy: imagePolicy };
+  if (imagePolicy.mode === 'explicit') {
     const prompt = buildImagePromptFromText(lastUserText, 'en');
     const generated = await generateImageForPrompt({ prompt, provider: 'openai' });
     if (generated?.url) {

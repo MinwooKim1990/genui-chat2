@@ -15,7 +15,7 @@ router.post('/', async (req, res) => {
     console.log(`[Chat] Request: provider=${provider}, model=${model}, messages=${messages.length}`);
 
     // Call LLM with web search enabled
-    const result = await callLLM({
+    let result = await callLLM({
       messages,
       provider,
       model,
@@ -23,6 +23,22 @@ router.post('/', async (req, res) => {
     });
 
     console.log(`[Chat] Response: parsed=${result.parsed?.length}, sources=${result.sources?.length}`);
+
+    const hasSandbox = Array.isArray(result.parsed) && result.parsed.some(item => item.type === 'sandbox' && item.code);
+    if (!hasSandbox) {
+      console.warn('[Chat] Missing sandbox response, attempting one repair pass.');
+      const retryMessages = [
+        ...messages,
+        { role: 'assistant', content: result.content || '' },
+        { role: 'user', content: 'Your previous response was invalid or missing the required JSON. Output ONLY valid JSON with type "sandbox", and keep the code concise.' }
+      ];
+      result = await callLLM({
+        messages: retryMessages,
+        provider,
+        model,
+        enableWebSearch: enableWebSearch !== undefined ? enableWebSearch : true
+      });
+    }
 
     res.json({
       content: result.content,

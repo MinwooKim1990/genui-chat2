@@ -24,6 +24,29 @@ const upload = multer({ storage });
 
 const OPENAI_MAX_FILE_BYTES = 50 * 1024 * 1024;
 
+const MIME_OVERRIDES = {
+  '.md': 'text/plain',
+  '.markdown': 'text/plain',
+  '.txt': 'text/plain',
+  '.text': 'text/plain',
+  '.csv': 'text/csv',
+  '.tsv': 'text/tab-separated-values',
+  '.json': 'application/json',
+  '.yaml': 'text/yaml',
+  '.yml': 'text/yaml',
+  '.pdf': 'application/pdf'
+};
+
+function normalizeMimeType(file) {
+  const provided = (file.mimetype || '').toLowerCase();
+  if (provided && provided !== 'application/octet-stream') {
+    return provided;
+  }
+
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  return MIME_OVERRIDES[ext] || provided || 'application/octet-stream';
+}
+
 function detectKind(mimeType = '') {
   if (mimeType.startsWith('image/')) return 'image';
   if (mimeType.startsWith('video/')) return 'video';
@@ -57,13 +80,14 @@ router.post('/upload', upload.array('files'), async (req, res) => {
   const results = [];
 
   for (const file of files) {
-    const kind = detectKind(file.mimetype);
+    const normalizedMimeType = normalizeMimeType(file);
+    const kind = detectKind(normalizedMimeType);
     const publicUrl = publicUrlForPath(`/media/uploads/${file.filename}`);
 
     const result = {
       id: `${file.filename}`,
       name: file.originalname,
-      mimeType: file.mimetype,
+      mimeType: normalizedMimeType,
       size: file.size,
       provider,
       kind,
@@ -73,7 +97,7 @@ router.post('/upload', upload.array('files'), async (req, res) => {
 
     try {
       if (provider === 'openai') {
-        const validation = validateOpenAIFile(file);
+        const validation = validateOpenAIFile({ ...file, mimetype: normalizedMimeType });
         result.kind = validation.kind;
         if (!validation.supported) {
           result.analysisAvailable = false;
@@ -83,7 +107,7 @@ router.post('/upload', upload.array('files'), async (req, res) => {
           const uploadResult = await uploadOpenAIFile({
             filePath: file.path,
             filename: file.originalname,
-            mimeType: file.mimetype,
+            mimeType: normalizedMimeType,
             purpose
           });
           result.fileId = uploadResult.fileId;
@@ -92,11 +116,11 @@ router.post('/upload', upload.array('files'), async (req, res) => {
       } else if (provider === 'gemini') {
         const uploadResult = await uploadGeminiFile({
           filePath: file.path,
-          mimeType: file.mimetype,
+          mimeType: normalizedMimeType,
           displayName: file.originalname
         });
         result.fileUri = uploadResult.fileUri;
-        result.mimeType = uploadResult.mimeType || file.mimetype;
+        result.mimeType = uploadResult.mimeType || normalizedMimeType;
         result.fileName = uploadResult.name;
       } else {
         result.analysisAvailable = false;
